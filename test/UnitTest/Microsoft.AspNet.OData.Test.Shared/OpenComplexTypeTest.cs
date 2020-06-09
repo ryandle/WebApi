@@ -229,6 +229,32 @@ namespace Microsoft.AspNet.OData.Test
         }
 
         [Fact]
+        public async Task OpenComplexType_PatchEntityTypeWithComplexOpenTypeProperty_Nested()
+        {
+            string payload = @"{
+                ""Address"":{ 
+                    ""Street"":""UpdatedStreet"",
+                    ""Token@odata.type"":""#Guid"",
+                    ""Token"":""40CEEEDE-031C-45CB-9E44-E6017D635814"",
+                    ""BirthDay@odata.type"":""#Date"",
+                    ""BirthDay"":""2016-01-29"",
+                    ""Building"":{
+                        ""@odata.type"":""#Microsoft.AspNet.OData.Test.Building"",
+                        ""BuildingName"":""BuildingNameY"",
+                        ""Telephone"":{
+                            ""@odata.type"":""#Microsoft.AspNet.OData.Test.Phone"",
+                            ""ContactName"":""ContactNameZ"",
+                            ""PhoneNumber"":17,
+                            ""Spec"":{""ScreenSize"":5}
+                        }
+                    }
+                }
+            }";
+
+            await ExecutePatchToCustomerRequest(payload);
+        }
+
+        [Fact]
         public async Task OpenComplexType_PatchNestedComplexTypeProperty_DoubleNested()
         {
             string payload = @"{
@@ -288,6 +314,26 @@ namespace Microsoft.AspNet.OData.Test
 
             // Assert
             Assert.True(response.IsSuccessStatusCode);
+            Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+        }
+
+        private async Task ExecutePatchToCustomerRequest(string payload)
+        {
+            // Arrange
+            payload = Regex.Replace(payload, @"\s*", "", RegexOptions.Multiline);
+
+            const string requestUri = "http://localhost/odata/OpenCustomers(1)";
+            HttpClient client = GetClient();
+
+            // Act
+            HttpRequestMessage request = new HttpRequestMessage(new HttpMethod("Patch"), requestUri);
+            request.Content = new StringContent(payload);
+            request.Content.Headers.ContentType = MediaTypeWithQualityHeaderValue.Parse("application/json");
+
+            HttpResponseMessage response = await client.SendAsync(request);
+
+            // Assert
+            Assert.True(response.IsSuccessStatusCode, $"Unexpected status code {response.StatusCode}");
             Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
         }
 
@@ -430,6 +476,30 @@ namespace Microsoft.AspNet.OData.Test
             KeyValuePair<string, object> dynamicProperty = Assert.Single(origin.DynamicProperties); // only one
             Assert.Equal("Publish", dynamicProperty.Key);
             Assert.Equal(new Date(2016, 2, 2), dynamicProperty.Value);
+
+            return Updated(customer);
+        }
+
+        public ITestActionResult PatchOpenCustomer(int key, Delta<OpenCustomer> openCustomer)
+        {
+            IList<OpenCustomer> customers = CreateCustomers();
+            OpenCustomer customer = customers.FirstOrDefault(c => c.CustomerId == key);
+            if (customer == null)
+            {
+                return NotFound();
+            }
+
+            // Hard coded to expect a change to address
+
+            List<string> changedProperties = openCustomer.GetChangedPropertyNames().ToList();
+
+            Assert.Single(changedProperties);
+            Assert.Equal(nameof(OpenCustomer.Address), changedProperties[0]);
+
+
+            // Bug - the instance returned does not have data patched on the complex open nested type
+            OpenCustomer instance = openCustomer.GetInstance();
+            Assert.NotNull(instance.Address);
 
             return Updated(customer);
         }
